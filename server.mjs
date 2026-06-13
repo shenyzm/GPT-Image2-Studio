@@ -550,6 +550,46 @@ async function handleDeleteOutput(request, response) {
   }
 }
 
+async function handleDeleteOutputBatch(request, response) {
+  const payload = await readJsonBody(request);
+  const filenames = Array.isArray(payload.filenames) ? payload.filenames : [];
+
+  if (filenames.length === 0) {
+    return sendJson(response, 400, {
+      message: "filenames is required",
+    });
+  }
+
+  const deleted = [];
+  const failed = [];
+
+  for (const rawFilename of filenames) {
+    const filename = String(rawFilename || "").trim();
+    if (!isSafeOutputFilename(filename)) {
+      failed.push({ filename, reason: "invalid" });
+      continue;
+    }
+
+    try {
+      const result = await deleteGeneratedAsset({ outputDir, filename });
+      deleted.push(result.filename);
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "ENOENT") {
+        // Already gone — treat as successfully removed.
+        deleted.push(filename);
+        continue;
+      }
+      failed.push({ filename, reason: "error" });
+    }
+  }
+
+  return sendJson(response, 200, {
+    ok: failed.length === 0,
+    deleted,
+    failed,
+  });
+}
+
 async function handleGalleryMetadataRepair(request, response) {
   const payload = await readJsonBody(request);
   const filename = String(payload.filename || "").trim();
@@ -4970,6 +5010,10 @@ async function routeRequest(request, response) {
 
   if (request.method === "POST" && url.pathname === "/api/output/delete") {
     return handleDeleteOutput(request, response);
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/output/delete-batch") {
+    return handleDeleteOutputBatch(request, response);
   }
 
   if (request.method === "POST" && url.pathname === "/api/gallery/metadata") {

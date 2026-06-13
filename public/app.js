@@ -6060,12 +6060,51 @@ async function deleteSelectedGalleryItems() {
   }
 
   const items = resolveSelectedItems(state.gallery, state.gallerySelection);
-  for (const item of items) {
-    await deleteGalleryItem(item);
-  }
+  await deleteGalleryItemsBatch(items);
 
   state.gallerySelection.clear();
   renderAll();
+}
+
+// Delete many gallery items in a single backend request, then reconcile all
+// local state (gallery list, metadata cache, browser image cache, preview).
+async function deleteGalleryItemsBatch(items) {
+  const targets = (Array.isArray(items) ? items : []).filter((item) => item?.filename);
+  if (targets.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    targets.flatMap((item) => [
+      preserveReferenceAnalysisGenerationItemForDelete(item),
+      preserveImageDecompositionGenerationItemForDelete(item),
+      preserveQuickBlendGenerationItemForDelete(item),
+    ]),
+  );
+
+  const filenames = targets.map((item) => item.filename);
+  const response = await fetch("/api/output/delete-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filenames }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.message || "批量删除失败");
+  }
+
+  const removed = new Set(filenames);
+  state.gallery = state.gallery.filter((entry) => !removed.has(entry.filename));
+  for (const filename of filenames) {
+    forgetGalleryMetadata(filename);
+    await deleteBrowserCachedGalleryItem(filename);
+    if (state.selectedPreviewKey === makeGalleryPreviewKey(filename)) {
+      state.selectedPreviewKey = "";
+    }
+    if (state.lightboxItem?.filename === filename) {
+      closeLightbox();
+    }
+  }
 }
 
 function normalizeGalleryColumnPreset(value) {
@@ -14429,20 +14468,16 @@ async function clearHistory() {
       preserveQuickBlendGenerationItemForDelete(item),
     ]),
   );
-  for (const item of [...state.gallery]) {
-    const response = await fetch("/api/output/delete", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        filename: item.filename,
-      }),
-    });
 
-    if (!response.ok) {
-      throw new Error(`删除失败：${item.filename}`);
-    }
+  const filenames = state.gallery.map((item) => item.filename).filter(Boolean);
+  const response = await fetch("/api/output/delete-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filenames }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || "清空画廊失败");
   }
 
   state.gallery = [];

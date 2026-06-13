@@ -3352,6 +3352,10 @@ export async function handleApiRequest(request, options = {}) {
     return jsonResponse({ ok: true });
   }
 
+  if (request.method === "POST" && url.pathname === "/api/output/delete-batch") {
+    return jsonResponse({ ok: true, deleted: [], failed: [] });
+  }
+
   if (request.method === "POST" && url.pathname === "/api/gallery/metadata") {
     return jsonResponse({ ok: true, item: null });
   }
