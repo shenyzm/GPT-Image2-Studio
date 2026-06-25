@@ -9802,6 +9802,45 @@ html[data-ui-layout="mobile"] .portrait-accessory-asset-panel {
   background: color-mix(in srgb, var(--panel) 42%, transparent);
 }
 
+.config-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-preset-select-field {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.config-preset-select-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  color: inherit;
+}
+
+.config-preset-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .config-action-bar {
   position: sticky;
   bottom: 0;

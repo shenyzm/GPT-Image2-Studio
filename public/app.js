@@ -15,6 +15,7 @@ import { GENERATION_STREAM_EVENTS, recordFinalImageChunk } from "/lib/generation
 import { getStudioDensitySettings, getStudioLayoutMode, ALL_VARIABLE_NAMES } from "/lib/studio-density.mjs?v=20260519-topbar-reveal-2";
 import { ensureLazyViewModule, getMountedLazyViewModule } from "/lib/view-mode-loader.mjs?v=20260606-quick-blend-pair-delete-1";
 import { appendBrowserConfigToFormData, getBrowserPrivateConfigRequestPayload, getOrCreateClientSessionId, readBrowserPrivateConfig, saveBrowserPrivateConfig, toPublicBrowserConfig } from "/lib/browser-config.mjs";
+import { addPreset, deletePreset, ensureDefaultPreset, getActivePreset, listPresets, renamePreset, setActivePresetId, upsertActivePreset } from "/lib/config-presets.mjs";
 import { cacheBrowserGalleryItem, clearBrowserImageCache, dataUrlToBlob, deleteBrowserCachedGalleryItem, fetchServerImageAsDataUrl, getBrowserCachedImageData, getImageUrl, getServerImageUrl, getServerThumbnailUrl, isCacheableBrowserImageUrl, mergeServerAndBrowserGalleryItems, readBrowserCachedGalleryItems } from "/lib/browser-image-cache.mjs";
 import { createCreationLogoLibraryController } from "/lib/creation-logo-library.mjs";
 import { consumeSse, requestGenerationStream } from "/lib/generation-client.mjs";
@@ -578,6 +579,10 @@ const refs = {
   configDrawer: document.querySelector("#configDrawer"),
   configFeedback: document.querySelector("#configFeedback"),
   configForm: document.querySelector("#configForm"),
+  configPresetSelect: document.querySelector("#configPresetSelect"),
+  configPresetNewButton: document.querySelector("#configPresetNewButton"),
+  configPresetRenameButton: document.querySelector("#configPresetRenameButton"),
+  configPresetDeleteButton: document.querySelector("#configPresetDeleteButton"),
   configGenerationLogPanel: document.querySelector("#configGenerationLogPanel"),
   configStatus: document.querySelector("#configStatus"),
   fetchModelsButton: document.querySelector("#fetchModelsButton"),
@@ -5060,6 +5065,98 @@ function getCurrentPrivateConfigRequestPayload() {
 function appendCurrentConfigToFormData(formData) {
   appendBrowserConfigToFormData(formData, undefined, getCurrentPrivateConfigRequestPayload());
   return formData;
+}
+
+// ===== 配置档案（API 预设）切换 =====
+// 捕获当前表单内容做新档案；密钥字段留空时回退到已保存的生效密钥，避免新档案丢 Key。
+function readCurrentFormPrivateConfig() {
+  return getCurrentPrivateConfigRequestPayload();
+}
+
+function applyPresetConfigToForm(config) {
+  const c = config || {};
+  refs.baseUrlInput.value = c.baseUrl || "";
+  refs.apiKeyInput.value = c.apiKey || "";
+  refs.responsesModelInput.value = c.responsesModel || "";
+  refs.directBaseUrlInput.value = c.directBaseUrl || "";
+  refs.directApiKeyInput.value = c.directApiKey || "";
+  refs.directImageModelInput.value = c.directImageModel || "";
+  refs.imageRouteInputs.forEach((input) => {
+    input.checked = input.value === (c.imageRoute === "b" ? "b" : "a");
+  });
+  updateGenerationModeStatus();
+  configModelPicker.render();
+}
+
+function renderConfigPresets() {
+  const select = refs.configPresetSelect;
+  if (!select) return;
+  const presets = listPresets();
+  const active = getActivePreset();
+  select.innerHTML = "";
+  if (presets.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "（暂无档案，保存后自动创建）";
+    select.appendChild(option);
+    select.disabled = true;
+    if (refs.configPresetRenameButton) refs.configPresetRenameButton.disabled = true;
+    if (refs.configPresetDeleteButton) refs.configPresetDeleteButton.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  if (refs.configPresetRenameButton) refs.configPresetRenameButton.disabled = false;
+  if (refs.configPresetDeleteButton) refs.configPresetDeleteButton.disabled = false;
+  presets.forEach((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.name;
+    select.appendChild(option);
+  });
+  select.value = active?.id || presets[0].id;
+}
+
+function handleConfigPresetSelect(event) {
+  const id = event.target.value;
+  if (!id) return;
+  setActivePresetId(id);
+  const preset = getActivePreset();
+  if (preset) {
+    applyPresetConfigToForm(preset.config);
+    configModelPicker.setFeedback(`已载入档案「${preset.name}」，点"保存"生效。`, "success");
+  }
+  renderConfigPresets();
+}
+
+function handleConfigPresetNew() {
+  const name = window.prompt("新建配置档案名称：", "新档案");
+  if (name === null) return;
+  const preset = addPreset({ name, config: readCurrentFormPrivateConfig() });
+  renderConfigPresets();
+  configModelPicker.setFeedback(`已新建档案「${preset.name}」（沿用当前表单内容），点"保存"生效。`, "success");
+}
+
+function handleConfigPresetRename() {
+  const active = getActivePreset();
+  if (!active) return;
+  const name = window.prompt("重命名配置档案：", active.name);
+  if (name === null) return;
+  renamePreset(active.id, name);
+  renderConfigPresets();
+  configModelPicker.setFeedback("档案已重命名。", "success");
+}
+
+function handleConfigPresetDelete() {
+  const active = getActivePreset();
+  if (!active) return;
+  if (!window.confirm(`确定删除配置档案「${active.name}」？此操作不可撤销。`)) return;
+  deletePreset(active.id);
+  const next = getActivePreset();
+  if (next) {
+    applyPresetConfigToForm(next.config);
+  }
+  renderConfigPresets();
+  configModelPicker.setFeedback(next ? `已删除档案，已切换到「${next.name}」，点"保存"生效。` : "已删除全部档案。", "success");
 }
 
 function syncConfigUi(config) {
@@ -14157,6 +14254,9 @@ async function loadConfig() {
 
   state.config = browserConfig ? toPublicBrowserConfig(browserConfig, serverConfig || {}) : serverConfig;
   syncConfigUi(state.config);
+  // 首次使用时，把当前生效配置吸纳为"默认"档案，保证下拉框不为空。
+  ensureDefaultPreset(browserConfig || readBrowserPrivateConfig());
+  renderConfigPresets();
 }
 
 async function loadGallery() {
@@ -14390,9 +14490,15 @@ async function saveConfig(event) {
 
   const browserConfig = saveBrowserPrivateConfig(payload);
   state.config = toPublicBrowserConfig(browserConfig, state.config || {});
+  // 保存时自动覆盖当前激活档案（无档案则创建"默认"）。
+  const activePreset = upsertActivePreset(browserConfig);
   refs.apiKeyInput.value = "";
   refs.directApiKeyInput.value = "";
-  configModelPicker.setFeedback("配置已保存到当前浏览器。", "success");
+  renderConfigPresets();
+  configModelPicker.setFeedback(
+    activePreset ? `配置已保存，并同步到档案「${activePreset.name}」。` : "配置已保存到当前浏览器。",
+    "success",
+  );
   syncConfigUi(state.config);
 }
 
@@ -15266,6 +15372,10 @@ function bindEvents() {
   refs.configForm.addEventListener("submit", (event) => {
     saveConfig(event).catch((error) => showError(error.message));
   });
+  refs.configPresetSelect?.addEventListener("change", handleConfigPresetSelect);
+  refs.configPresetNewButton?.addEventListener("click", handleConfigPresetNew);
+  refs.configPresetRenameButton?.addEventListener("click", handleConfigPresetRename);
+  refs.configPresetDeleteButton?.addEventListener("click", handleConfigPresetDelete);
   refs.imageRouteInputs.forEach((input) => input.addEventListener("change", updateGenerationModeStatus));
   configModelPicker.bindEvents();
   refs.generateForm.addEventListener("submit", startGeneration);

@@ -2431,6 +2431,24 @@
 
         <div class="config-drawer-body">
           <form class="config-form" id="configForm">
+            <section class="config-card config-preset-card" aria-labelledby="configPresetTitle">
+              <div class="config-card-head">
+                <h3 id="configPresetTitle">配置档案</h3>
+                <small class="config-note">在多家上游 / 多把 Key 之间快速切换</small>
+              </div>
+              <div class="config-preset-row">
+                <label class="field config-preset-select-field">
+                  <span class="sr-only">选择配置档案</span>
+                  <select id="configPresetSelect" aria-label="选择配置档案"></select>
+                </label>
+                <div class="config-preset-actions">
+                  <button class="inline-button" id="configPresetNewButton" type="button">新建</button>
+                  <button class="inline-button" id="configPresetRenameButton" type="button">重命名</button>
+                  <button class="inline-button" id="configPresetDeleteButton" type="button">删除</button>
+                </div>
+              </div>
+            </section>
+
             <section class="config-card config-connection-card" aria-labelledby="configConnectionTitle">
               <div class="config-card-head">
                 <h3 id="configConnectionTitle">调用通道</h3>
